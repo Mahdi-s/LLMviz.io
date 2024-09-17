@@ -49,4 +49,9 @@ body {
     right: 0;
     z-index: 100;
   }
+
+  .layer-label {
+    pointer-events: none;
+  }
+  
   

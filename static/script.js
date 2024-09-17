@@ -1,9 +1,8 @@
-// script.js
-// import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
+import * as THREE from 'three';
 import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/controls/OrbitControls.js';
 import { GUI } from 'https://cdn.jsdelivr.net/npm/dat.gui@0.7.9/build/dat.gui.module.js';
+import { CSS2DRenderer, CSS2DObject } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/renderers/CSS2DRenderer.js';
 
-import * as THREE from 'three';
 
 
 // import { OrbitControls } from './OrbitControls.js';
@@ -27,6 +26,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('prompt-form').addEventListener('submit', onFormSubmit);
 });
 
+let labelRenderer; // Declare this at the top with other variables
+
+
 function initScene() {
   // Scene setup
   scene = new THREE.Scene();
@@ -45,6 +47,15 @@ function initScene() {
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth - 300, window.innerHeight);
   document.getElementById('visualization-panel').appendChild(renderer.domElement);
+
+    // Initialize CSS2DRenderer
+    labelRenderer = new CSS2DRenderer();
+    labelRenderer.setSize(window.innerWidth - 300, window.innerHeight);
+    labelRenderer.domElement.style.position = 'absolute';
+    labelRenderer.domElement.style.top = '0px';
+    labelRenderer.domElement.style.pointerEvents = 'none';
+    document.getElementById('visualization-panel').appendChild(labelRenderer.domElement);
+  
 
   // Controls setup
   controls = new OrbitControls(camera, renderer.domElement);
@@ -112,10 +123,17 @@ function displayPredictedToken(token) {
   predictedTokenDiv.textContent = `Predicted Token: ${token}`;
 }
 
+let layerLabels = []; // Add this at the top with other variables
+
+
 function renderActivationBars() {
   // Clear existing bars
   barMeshes.forEach((mesh) => scene.remove(mesh));
   barMeshes = [];
+
+  // Clear existing labels
+  layerLabels.forEach((label) => scene.remove(label));
+  layerLabels = [];
 
   const layerNames = Object.keys(activationData);
   const gridSpacing = visualizationParams.gridSpacing;
@@ -170,9 +188,25 @@ function renderActivationBars() {
     }
 
     barMeshes.push(...bars);
+
+    // Add label for the layer
+    const labelDiv = document.createElement('div');
+    labelDiv.className = 'layer-label';
+    labelDiv.textContent = layerName;
+    labelDiv.style.marginTop = '-1em';
+    labelDiv.style.color = 'white';
+    labelDiv.style.fontSize = '14px';
+    labelDiv.style.textAlign = 'center';
+
+    const label = new CSS2DObject(labelDiv);
+    label.position.set(0, layerIndex * 10 + 5, 0); // Adjust position as needed
+    scene.add(label);
+    layerLabels.push(label);
+
     layerIndex++;
   });
 }
+
 
 function flattenActivations(activations) {
   if (Array.isArray(activations)) {
@@ -227,6 +261,7 @@ function animate() {
   });
 
   renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
 }
 
 // Shader sources
