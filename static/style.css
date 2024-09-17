@@ -1,0 +1,52 @@
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    overflow: hidden; /* Hide scrollbars */
+  }
+  
+  #container {
+    display: flex;
+    height: 100vh;
+  }
+  
+  #input-panel {
+    width: 300px;
+    padding: 20px;
+    background-color: #f4f4f4;
+    box-sizing: border-box;
+    overflow-y: auto;
+  }
+  
+  #visualization-panel {
+    flex: 1;
+    position: relative;
+  }
+  
+  #prompt-form {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  #prompt {
+    width: 100%;
+    margin-bottom: 10px;
+    resize: none;
+  }
+  
+  button {
+    padding: 10px;
+    cursor: pointer;
+  }
+  
+  #predicted-token {
+    margin-top: 20px;
+    font-size: 1.2em;
+  }
+  
+  .gui-container {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 100;
+  }
+  

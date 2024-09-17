@@ -1,10 +1,21 @@
 from flask import Flask, render_template, request, jsonify
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
 import numpy as np
-from transformer_lens import HookedTransformer
+import onnxruntime as ort
+from transformers import AutoTokenizer
 
 app = Flask(__name__)
+
+# Load the tokenizer and ONNX model once at startup
+model_name = 'distilgpt2'
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+# Create an inference session
+ort_session = ort.InferenceSession('distilgpt2_with_activations.onnx')
+
+# Print model input names
+print("Model inputs:")
+for input_meta in ort_session.get_inputs():
+    print(f"Name: {input_meta.name}, Shape: {input_meta.shape}, Type: {input_meta.type}")
 
 @app.route('/', methods=['GET'])
 def index():
@@ -14,44 +25,31 @@ def index():
 def compute():
     prompt = request.form['prompt']
 
-    model_name = 'distilgpt2'
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(model_name)
+    inputs = tokenizer(prompt, return_tensors="np")
+    input_ids = inputs['input_ids']
 
-    inputs = tokenizer(prompt, return_tensors="pt")
-    
-    # Get model prediction
-    with torch.no_grad():
-        outputs = model(**inputs)
-    predicted_token_id = outputs.logits[0, -1].argmax()
-    predicted_token = tokenizer.decode(predicted_token_id)
+    # Prepare inputs for ONNX Runtime
+    ort_inputs = {'input_ids': input_ids}
 
-    # Use transformer-lens to extract internal activations
-    hooked_model = HookedTransformer.from_pretrained(model_name)
-    tokens = hooked_model.to_tokens(prompt)
-    logits, cache = hooked_model.run_with_cache(tokens)
+    # Run inference and get intermediate activations
+    ort_outputs = ort_session.run(None, ort_inputs)
+
+    # The first output is logits; the rest are activations
+    logits = ort_outputs[0]
+    activation_outputs = ort_outputs[1:]
+
+    # Get the predicted token
+    predicted_token_id = np.argmax(logits[0, -1, :])
+    predicted_token = tokenizer.decode([predicted_token_id])
 
     # Prepare activations for visualization
-    activations = {
-        'token_embeddings': cache['hook_embed'].squeeze().numpy(),
-        'positional_embeddings': cache['hook_pos_embed'].squeeze().numpy(),
-    }
+    activations = {}
+    layer_names = ['embeddings'] + [f'layer_{i}' for i in range(len(activation_outputs) - 1)] + ['final_layer_norm']
 
-    # Extract layer-specific activations
-    for layer in range(hooked_model.cfg.n_layers):
-        activations.update({
-            f'layer_{layer}_norm1': cache[f'blocks.{layer}.ln1.hook_normalized'].squeeze().numpy(),
-            f'layer_{layer}_attn_q': cache[f'blocks.{layer}.attn.hook_q'].squeeze().numpy(),
-            f'layer_{layer}_attn_k': cache[f'blocks.{layer}.attn.hook_k'].squeeze().numpy(),
-            f'layer_{layer}_attn_v': cache[f'blocks.{layer}.attn.hook_v'].squeeze().numpy(),
-            f'layer_{layer}_mlp_out': cache[f'blocks.{layer}.mlp.hook_post'].squeeze().numpy(),
-            f'layer_{layer}_resid_pre': cache[f'blocks.{layer}.hook_resid_pre'].squeeze().numpy(),
-            f'layer_{layer}_resid_post': cache[f'blocks.{layer}.hook_resid_post'].squeeze().numpy(),
-        })
-
-    # Replace NaN and Infinity values
-    for key in activations:
-        activations[key] = np.nan_to_num(activations[key], nan=0.0, posinf=1e6, neginf=-1e6).tolist()
+    for name, activation in zip(layer_names, activation_outputs):
+        # Replace NaN and Infinity values
+        activation = np.nan_to_num(activation, nan=0.0, posinf=1e6, neginf=-1e6)
+        activations[name] = activation.squeeze().tolist()
 
     return jsonify({
         'activations': activations,
