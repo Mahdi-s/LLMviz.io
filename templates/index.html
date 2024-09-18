@@ -10,7 +10,7 @@
         "three": "/static/three.module.js"
       }
     }
-    </script>
+  </script>
 </head>
 <body>
   <div id="container">
@@ -26,6 +26,48 @@
       <!-- The Three.js canvas will be injected here -->
     </div>
   </div>
+
+  <!-- Shader Scripts -->
+  <script id="vertexShader" type="x-shader/x-vertex">
+    uniform float uPointSize;
+    uniform float uBarHeightScale;
+    uniform float uShaderIntensity;
+    varying float vActivation;
+    attribute float aActivation;
+    
+    void main() {
+        // Pass activation to fragment shader
+        vActivation = aActivation;
+    
+        // Scale the point size based on activation
+        float size = uPointSize + aActivation * uBarHeightScale;
+    
+        // Set the point size
+        gl_PointSize = size;
+    
+        // Standard transformation
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+    
+  </script>
+
+  <script id="fragmentShader" type="x-shader/x-fragment">
+    uniform vec3 uLowColor;
+    uniform vec3 uHighColor;
+    uniform float uShaderIntensity;
+    varying float vActivation;
+    
+    void main() {
+        // Interpolate color based on activation
+        vec3 color = mix(uLowColor, uHighColor, vActivation);
+    
+        // Apply shader intensity
+        color *= uShaderIntensity;
+    
+        gl_FragColor = vec4(color, 1.0);
+    }
+    
+  </script>
 
   <!-- Include your main script as a module -->
   <script type="module" src="{{ url_for('static', filename='script.js') }}"></script>
