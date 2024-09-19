@@ -1,12 +1,8 @@
 import * as THREE from 'three';
+import { InstancedMesh } from 'three';
 import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/controls/OrbitControls.js';
 import { GUI } from 'https://cdn.jsdelivr.net/npm/dat.gui@0.7.9/build/dat.gui.module.js';
 import { CSS2DRenderer, CSS2DObject } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/renderers/CSS2DRenderer.js';
-
-
-
-// import { OrbitControls } from './OrbitControls.js';
-// import { GUI } from './dat.gui.module.js';
 
 let scene, camera, renderer, controls;
 let activationData = {};
@@ -20,21 +16,14 @@ let visualizationParams = {
   shaderEffectIntensity: 1,
 };
 
-document.addEventListener('DOMContentLoaded', () => {
-  initScene();
-  initGUI();
-  document.getElementById('prompt-form').addEventListener('submit', onFormSubmit);
-});
 
-let labelRenderer; // Declare this at the top with other variables
 
+let labelRenderer;
 
 function initScene() {
-  // Scene setup
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
 
-  // Camera setup
   camera = new THREE.PerspectiveCamera(
     75,
     (window.innerWidth - 300) / window.innerHeight,
@@ -43,31 +32,26 @@ function initScene() {
   );
   camera.position.set(0, 20, 50);
 
-  // Renderer setup
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth - 300, window.innerHeight);
   document.getElementById('visualization-panel').appendChild(renderer.domElement);
 
-    // Initialize CSS2DRenderer
-    labelRenderer = new CSS2DRenderer();
-    labelRenderer.setSize(window.innerWidth - 300, window.innerHeight);
-    labelRenderer.domElement.style.position = 'absolute';
-    labelRenderer.domElement.style.top = '0px';
-    labelRenderer.domElement.style.pointerEvents = 'none';
-    document.getElementById('visualization-panel').appendChild(labelRenderer.domElement);
-  
+  labelRenderer = new CSS2DRenderer();
+  labelRenderer.setSize(window.innerWidth - 300, window.innerHeight);
+  labelRenderer.domElement.style.position = 'absolute';
+  labelRenderer.domElement.style.top = '0px';
+  labelRenderer.domElement.style.pointerEvents = 'none';
+  document.getElementById('visualization-panel').appendChild(labelRenderer.domElement);
 
-  // Controls setup
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableKeys = true;
   controls.keys = {
-    LEFT: 37, // left arrow
-    UP: 38, // up arrow
-    RIGHT: 39, // right arrow
-    BOTTOM: 40, // down arrow
+    LEFT: 37,
+    UP: 38,
+    RIGHT: 39,
+    BOTTOM: 40,
   };
 
-  // Lighting
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
   scene.add(ambientLight);
 
@@ -75,10 +59,8 @@ function initScene() {
   camera.add(pointLight);
   scene.add(camera);
 
-  // Handle window resize
   window.addEventListener('resize', onWindowResize, false);
 
-  // Start animation loop
   animate();
 }
 
@@ -94,6 +76,11 @@ function initGUI() {
   gui.add(visualizationParams, 'gridSpacing', 0.5, 5).onChange(renderActivationBars);
   gui.add(visualizationParams, 'showLayers').onChange(toggleLayersVisibility);
   gui.add(visualizationParams, 'shaderEffectIntensity', 0, 2).onChange(updateShaderEffects);
+
+  visualizationParams.activationThreshold = 0.5;
+
+  gui.add(visualizationParams, 'activationThreshold', 0, 1).name('Activation Threshold').onChange(applyActivationFilter);
+
 }
 
 function onFormSubmit(event) {
@@ -123,15 +110,35 @@ function displayPredictedToken(token) {
   predictedTokenDiv.textContent = `Predicted Token: ${token}`;
 }
 
-let layerLabels = []; // Add this at the top with other variables
+let layerLabels = [];
 
+// Shader sources
+const vertexShaderSource = `
+  varying vec3 vPosition;
+
+  void main() {
+    vPosition = position;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const fragmentShaderSource = `
+  uniform float time;
+  uniform vec3 color;
+  uniform float intensity;
+  varying vec3 vPosition;
+
+  void main() {
+    float pulsate = sin(time + vPosition.y * 0.5) * 0.5 + 0.5;
+    gl_FragColor = vec4(color * pulsate * intensity, 1.0);
+  }
+`;
 
 function renderActivationBars() {
-  // Clear existing bars
+  scene.remove(...barMeshes);
   barMeshes.forEach((mesh) => scene.remove(mesh));
   barMeshes = [];
 
-  // Clear existing labels
   layerLabels.forEach((label) => scene.remove(label));
   layerLabels = [];
 
@@ -143,7 +150,6 @@ function renderActivationBars() {
 
   layerNames.forEach((layerName) => {
     const activations = activationData[layerName];
-    // Flatten activations if necessary
     const flatActivations = flattenActivations(activations);
 
     const numBars = flatActivations.length;
@@ -152,17 +158,17 @@ function renderActivationBars() {
 
     for (let i = 0; i < numBars; i++) {
       const value = flatActivations[i];
+      const normalizedValue = (value + 1) / 2; // Assuming activation range [-1,1]
       const geometry = new THREE.BoxGeometry(
         gridSpacing,
         Math.abs(value) * barHeightScale,
         gridSpacing
       );
 
-      // Shader material
       const material = new THREE.ShaderMaterial({
         uniforms: {
           time: { value: 0 },
-          color: { value: new THREE.Color(visualizationParams.barColor) },
+          color: { value: new THREE.Color(getLayerColor(layerIndex)) },
           intensity: { value: visualizationParams.shaderEffectIntensity },
         },
         vertexShader: vertexShaderSource,
@@ -171,17 +177,16 @@ function renderActivationBars() {
 
       const bar = new THREE.Mesh(geometry, material);
 
-      // Position the bars in a grid
       const row = Math.floor(i / gridSize);
       const col = i % gridSize;
       bar.position.set(
         col * gridSpacing - (gridSize * gridSpacing) / 2,
         (Math.abs(value) * barHeightScale) / 2,
-        row * gridSpacing - (gridSize * gridSpacing) / 2
+        layerIndex * 5
       );
 
-      // Position the entire layer
-      bar.position.y += layerIndex * 10; // Adjust layer spacing
+      // Scale particle size based on activation magnitude
+      bar.scale.y = Math.abs(value) * barHeightScale;
 
       bars.push(bar);
       scene.add(bar);
@@ -199,7 +204,7 @@ function renderActivationBars() {
     labelDiv.style.textAlign = 'center';
 
     const label = new CSS2DObject(labelDiv);
-    label.position.set(0, layerIndex * 10 + 5, 0); // Adjust position as needed
+    label.position.set(0, layerIndex * 5 + 2.5, 0);
     scene.add(label);
     layerLabels.push(label);
 
@@ -207,6 +212,10 @@ function renderActivationBars() {
   });
 }
 
+function getLayerColor(index) {
+  const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ffffff'];
+  return colors[index % colors.length];
+}
 
 function flattenActivations(activations) {
   if (Array.isArray(activations)) {
@@ -247,41 +256,37 @@ function onWindowResize() {
   camera.aspect = (window.innerWidth - 300) / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth - 300, window.innerHeight);
+  labelRenderer.setSize(window.innerWidth - 300, window.innerHeight);
 }
 
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
 
-  // Update shader uniforms
+  const distance = camera.position.distanceTo(new THREE.Vector3(0, 0, 0));
+
   barMeshes.forEach((mesh) => {
-    if (mesh.material.uniforms && mesh.material.uniforms.time) {
-      mesh.material.uniforms.time.value = performance.now() / 1000;
-    }
+    mesh.scale.setScalar(distance < 50 ? 1 : 0.5);
   });
 
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
 }
 
-// Shader sources
-const vertexShaderSource = `
-  varying vec3 vPosition;
 
-  void main() {
-    vPosition = position;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
+document.addEventListener('DOMContentLoaded', () => {
+  initScene();
+  initGUI();
+  document.getElementById('prompt-form').addEventListener('submit', onFormSubmit);
+});
 
-const fragmentShaderSource = `
-  uniform float time;
-  uniform vec3 color;
-  uniform float intensity;
-  varying vec3 vPosition;
 
-  void main() {
-    float pulsate = sin(time + vPosition.y * 0.5) * 0.5 + 0.5;
-    gl_FragColor = vec4(color * pulsate * intensity, 1.0);
-  }
-`;
+function applyActivationFilter() {
+  barMeshes.forEach((mesh, index) => {
+    const activation = activationData[Object.keys(activationData)[Math.floor(index / gridSize)]][index % gridSize];
+    mesh.visible = Math.abs(activation) >= visualizationParams.activationThreshold;
+  });
+}
+
+
+

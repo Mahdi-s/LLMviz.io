@@ -10,7 +10,7 @@ model_name = 'distilgpt2'
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
 # Create an inference session
-ort_session = ort.InferenceSession('distilgpt2_with_activations.onnx')
+ort_session = ort.InferenceSession('model/model.onnx')
 
 # Print model input names
 print("Model inputs:")
