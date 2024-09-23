@@ -3,6 +3,9 @@
 
 llmviz/
 
+model_static/
+model/
+
 # Large library files
 llmviz/Lib/site-packages/torch/lib/torch_cpu.dll
 llmviz/Lib/site-packages/torch/lib/dnnl.lib
