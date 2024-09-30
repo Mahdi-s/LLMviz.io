@@ -1,3 +1,6 @@
+// script.js
+
+// Use module imports with correct paths and CORS support
 import * as THREE from 'three';
 import { InstancedMesh } from 'three';
 import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/controls/OrbitControls.js';
@@ -14,9 +17,8 @@ let visualizationParams = {
   gridSpacing: 1,
   showLayers: true,
   shaderEffectIntensity: 1,
+  activationThreshold: 0.5,
 };
-
-
 
 let labelRenderer;
 
@@ -76,11 +78,7 @@ function initGUI() {
   gui.add(visualizationParams, 'gridSpacing', 0.5, 5).onChange(renderActivationBars);
   gui.add(visualizationParams, 'showLayers').onChange(toggleLayersVisibility);
   gui.add(visualizationParams, 'shaderEffectIntensity', 0, 2).onChange(updateShaderEffects);
-
-  visualizationParams.activationThreshold = 0.5;
-
   gui.add(visualizationParams, 'activationThreshold', 0, 1).name('Activation Threshold').onChange(applyActivationFilter);
-
 }
 
 function onFormSubmit(event) {
@@ -135,7 +133,7 @@ const fragmentShaderSource = `
 `;
 
 function renderActivationBars() {
-  scene.remove(...barMeshes);
+  // Remove previous meshes and labels
   barMeshes.forEach((mesh) => scene.remove(mesh));
   barMeshes = [];
 
@@ -158,10 +156,11 @@ function renderActivationBars() {
 
     for (let i = 0; i < numBars; i++) {
       const value = flatActivations[i];
-      const normalizedValue = (value + 1) / 2; // Assuming activation range [-1,1]
+      const activationValue = Math.abs(value) * barHeightScale || 0.1; // Avoid zero height
+
       const geometry = new THREE.BoxGeometry(
         gridSpacing,
-        Math.abs(value) * barHeightScale,
+        activationValue,
         gridSpacing
       );
 
@@ -181,12 +180,12 @@ function renderActivationBars() {
       const col = i % gridSize;
       bar.position.set(
         col * gridSpacing - (gridSize * gridSpacing) / 2,
-        (Math.abs(value) * barHeightScale) / 2,
+        activationValue / 2,
         layerIndex * 5
       );
 
-      // Scale particle size based on activation magnitude
-      bar.scale.y = Math.abs(value) * barHeightScale;
+      // Apply activation threshold
+      bar.visible = Math.abs(value) >= visualizationParams.activationThreshold;
 
       bars.push(bar);
       scene.add(bar);
@@ -263,16 +262,17 @@ function animate() {
   requestAnimationFrame(animate);
   controls.update();
 
-  const distance = camera.position.distanceTo(new THREE.Vector3(0, 0, 0));
+  const time = performance.now() * 0.001;
 
   barMeshes.forEach((mesh) => {
-    mesh.scale.setScalar(distance < 50 ? 1 : 0.5);
+    if (mesh.material.uniforms && mesh.material.uniforms.time) {
+      mesh.material.uniforms.time.value = time;
+    }
   });
 
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
 }
-
 
 document.addEventListener('DOMContentLoaded', () => {
   initScene();
@@ -280,13 +280,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('prompt-form').addEventListener('submit', onFormSubmit);
 });
 
-
 function applyActivationFilter() {
-  barMeshes.forEach((mesh, index) => {
-    const activation = activationData[Object.keys(activationData)[Math.floor(index / gridSize)]][index % gridSize];
-    mesh.visible = Math.abs(activation) >= visualizationParams.activationThreshold;
+  barMeshes.forEach((mesh) => {
+    // The activation value is embedded in the scale of the bar
+    const activationValue = mesh.scale.y / visualizationParams.barHeightScale;
+    mesh.visible = Math.abs(activationValue) >= visualizationParams.activationThreshold;
   });
 }
-
-
-
