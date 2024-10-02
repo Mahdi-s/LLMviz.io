@@ -121,7 +121,29 @@ def create_activation_plots(layer_data, layer_name):
         height=700
     )
     
-    return scatter_2d, bar_plot, scatter_3d
+    # Stem plot
+    stem_plot = go.Figure(data=[
+        go.Scatter(
+            x=list(range(100)),
+            y=data[:100],
+            mode='markers',
+            name='Activations'
+        ),
+        go.Scatter(
+            x=list(range(100)),
+            y=data[:100],
+            mode='lines',
+            name='Stems'
+        )
+    ])
+    stem_plot.update_layout(
+        title=f"Stem Plot (First 100 Neurons) - {layer_name}",
+        xaxis_title="Neuron Index",
+        yaxis_title="Activation Value",
+        height=500
+    )
+    
+    return scatter_2d, bar_plot, scatter_3d, stem_plot
 
 def display_layer_details(details, tokenizer, input_ids):
     for layer_name, layer_data in details:
@@ -138,10 +160,11 @@ def display_layer_details(details, tokenizer, input_ids):
             st.write(f"Std: {layer_data.std().item():.4f}")
         
         # Create and display activation plots
-        scatter_2d, bar_plot, scatter_3d = create_activation_plots(layer_data, layer_name)
+        scatter_2d, bar_plot, scatter_3d, stem_plot = create_activation_plots(layer_data, layer_name)
         st.plotly_chart(scatter_2d, use_container_width=True)
         st.plotly_chart(bar_plot, use_container_width=True)
         st.plotly_chart(scatter_3d, use_container_width=True)
+        st.plotly_chart(stem_plot, use_container_width=True)
         
         if layer_name == "Final Output":
             # Display top predicted tokens
