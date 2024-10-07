@@ -1,0 +1,121 @@
+# templates/index.html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Graph Visualization</title>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script id="vertexShader" type="x-shader/x-vertex">
+        varying vec3 vUv;
+        uniform float uTime;
+        uniform float uLayer;
+
+        void main() {
+            vUv = position;
+            vec3 pos = position;
+            pos.z += sin(uTime * 0.001 + uLayer * 0.5) * 50.0;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+        }
+    </script>
+
+    <script id="fragmentShader" type="x-shader/x-fragment">
+        uniform vec3 uColor;
+        varying vec3 vUv;
+
+        void main() {
+            gl_FragColor = vec4(uColor, 1.0);
+        }
+    </script>
+
+    <script>
+        let scene, camera, renderer, controls, data;
+        const meshes = [];
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 500;
+
+            renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+            fetch('/get_data')
+                .then(response => response.json())
+                .then(jsonData => {
+                    data = jsonData;
+                    createMeshes();
+                });
+
+            animate();
+        }
+
+        function createMeshes() {
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    uTime: { value: 0 },
+                    uLayer: { value: 0 },
+                    uColor: { value: new THREE.Color() }
+                },
+                vertexShader: document.getElementById('vertexShader').textContent,
+                fragmentShader: document.getElementById('fragmentShader').textContent,
+                side: THREE.DoubleSide
+            });
+
+            data.forEach((layer, index) => {
+                const geometry = new THREE.PlaneGeometry(
+                    layer.values[0].length,
+                    layer.values.length,
+                    layer.values[0].length - 1,
+                    layer.values.length - 1
+                );
+
+                const positions = geometry.attributes.position.array;
+                for (let i = 0; i < positions.length; i += 3) {
+                    const x = Math.floor(i / 3) % layer.values[0].length;
+                    const y = Math.floor(i / (3 * layer.values[0].length));
+                    positions[i + 2] = layer.values[y][x] * 100;
+                }
+
+                const mesh = new THREE.Mesh(geometry, material.clone());
+                mesh.material.uniforms.uLayer.value = index;
+                mesh.material.uniforms.uColor.value.setHSL(index / data.length, 1, 0.5);
+                mesh.position.y = index * 50 - (data.length * 25);
+                scene.add(mesh);
+                meshes.push(mesh);
+            });
+
+            // Adjust camera position
+            camera.position.set(0, 0, Math.max(data.length * 50, 500));
+            camera.lookAt(scene.position);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            meshes.forEach(mesh => {
+                mesh.material.uniforms.uTime.value = Date.now();
+            });
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        init();
+    </script>
+</body>
+</html>
